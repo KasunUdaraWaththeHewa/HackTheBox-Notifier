@@ -1,10 +1,10 @@
 name: HTB CTF Email Watcher
 
 on:
-  # Runs every day at 05:00 UTC
+  # Run every day at 05:00 UTC
   schedule:
     - cron: '0 5 * * *'
-  # Allow manual execution from the Actions tab
+  # Allow manual runs
   workflow_dispatch: {}
 
 jobs:
@@ -31,6 +31,30 @@ jobs:
       - name: 📦 Install dependencies
         run: pip install -r requirements.txt
 
+      - name: 🧩 Initialize required environment variables
+        run: |
+          echo "Checking required environment variables..."
+          required_vars=(SMTP_SERVER SMTP_PORT SMTP_USER SMTP_PASS EMAIL_TO EMAIL_FROM)
+          missing=()
+          for var in "${required_vars[@]}"; do
+            if [ -z "${!var}" ]; then
+              missing+=("$var")
+            fi
+          done
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "❌ Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
+          echo "✅ All required SMTP/email environment variables are present."
+
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+
       - name: 🚀 Run HTB CTF Email Watcher
         env:
           # HackTheBox API config
@@ -38,7 +62,7 @@ jobs:
           CACHE_FILE: "ctf_cache.json"
           USER_AGENT: "HTB-CTF-Watcher/EmailBot"
 
-          # Strict email environment variables (required)
+          # Email configs (strict, injected from GitHub Secrets)
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
