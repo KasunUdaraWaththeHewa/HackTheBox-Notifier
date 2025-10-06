@@ -18,17 +18,14 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from typing import Optional
 
-# --- Load environment (.env for local, GitHub Secrets for CI) ---
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
 
-# --- Config (strict) ---
 from sys import exit
 
-# Required variables (must exist)
 REQUIRED_ENV_VARS = [
     "SMTP_SERVER",
     "SMTP_PORT",
@@ -43,12 +40,10 @@ if missing:
     print(f"❌ Missing required environment variables: {', '.join(missing)}")
     exit(1)
 
-# Core configs
 HTB_API_BASE = os.getenv("HTB_API_BASE") or "https://ctf.hackthebox.com/api/public/ctfs"
 CACHE_FILE = os.getenv("CACHE_FILE") or "ctf_cache.json"
 USER_AGENT = os.getenv("USER_AGENT") or "HTB-CTF-Watcher/EmailBot"
 
-# Strict email configs (no fallback)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
 SMTP_PORT = int(os.getenv("SMTP_PORT"))
 SMTP_USER = os.getenv("SMTP_USER")
@@ -56,19 +51,15 @@ SMTP_PASS = os.getenv("SMTP_PASS")
 EMAIL_TO = os.getenv("EMAIL_TO")
 EMAIL_FROM = os.getenv("EMAIL_FROM")
 
-# Optional runtime tuning
 SLEEP_BETWEEN_DETAILS = float(os.getenv("SLEEP_BETWEEN_DETAILS", "1.0"))
 HTTP_TIMEOUT = int(os.getenv("HTTP_TIMEOUT", "20"))
 
-
-# --- Token detection ---
 TOKEN_RE = re.compile(
     r'(?:token|access\s*(?:code|key)|join\s*code|join\s*key|invite\s*code)\s*[:=\-]?\s*([A-Za-z0-9_\-]{4,40})',
     re.I,
 )
 URL_TOKEN_RE = re.compile(r'[?&](?:code|token|access_code|invite)=([A-Za-z0-9_\-]{4,80})', re.I)
 
-# --- Helpers ---
 def log(*args):
     print(f"[{datetime.now(timezone.utc).isoformat()}]", *args)
 
@@ -125,7 +116,7 @@ def build_email_body(ctf: dict, detail: dict, token: Optional[str]):
     start = ctf.get("starts_at")
     end = ctf.get("ends_at")
     slug = ctf.get("slug")
-    url = f"https://ctf.hackthebox.com/event/{slug}"
+    url = f"https://ctf.hackthebox.com/event/details/{slug}"
     avatar = choose_avatar(detail, ctf)
 
     html = f"""
@@ -142,16 +133,24 @@ def build_email_body(ctf: dict, detail: dict, token: Optional[str]):
         html += f'<img src="{avatar}" alt="CTF banner" width="500"><br>'
     return html
 
-def send_email(subject: str, html_body: str):
+def send_email(html_body: str):
+    """Send email that joins the same thread each time."""
     if not (SMTP_USER and SMTP_PASS and EMAIL_TO):
         log("❌ Missing email configuration (SMTP_USER, SMTP_PASS, EMAIL_TO)")
         return False
 
+    subject = "HackTheBox CTF Alerts 🟢"
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = EMAIL_FROM
     msg["To"] = EMAIL_TO
-    msg.set_content("Plain-text email fallback")
+
+    thread_id = "<htb-ctf-alerts@kasun-notify>"
+    msg["Message-ID"] = thread_id
+    msg["In-Reply-To"] = thread_id
+    msg["References"] = thread_id
+
+    msg.set_content("Your email client does not support HTML.")
     msg.add_alternative(html_body, subtype="html")
 
     try:
@@ -165,7 +164,6 @@ def send_email(subject: str, html_body: str):
         log("❌ Email send failed:", e)
         return False
 
-# --- Main ---
 def main():
     log("🚀 Starting HTB CTF Email Watcher")
     cache = load_cache()
@@ -188,8 +186,7 @@ def main():
         matched, token = is_free_or_has_token(detail)
         if matched:
             html_body = build_email_body(ctf, detail, token)
-            subject = f"New HTB CTF: {ctf.get('name')}"
-            send_email(subject, html_body)
+            send_email(html_body)
             new_ctfs.append(ctf.get("name"))
         cache[cid] = {"slug": slug, "checked": datetime.now(timezone.utc).isoformat()}
         save_cache(cache)
